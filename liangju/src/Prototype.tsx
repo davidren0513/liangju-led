@@ -3,7 +3,7 @@ import { ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, ArrowDownIcon, ArrowsOutSim
 import { BottomSheet, KeyboardTextarea, MobileScroll, useKeyboard, useKeyboardInsets, useMobileDevice } from "./mobile";
 
 type Direction = "left" | "right" | "up" | "down" | "still";
-type Panel = "color" | "direction" | "speed" | "edit" | "voice" | "settings" | "about" | null;
+type Panel = "color" | "direction" | "speed" | "edit" | "voice" | "settings" | "about" | "download" | null;
 const AUTHOR = "davidren0513";
 const GITHUB_URL = "https://github.com/davidren0513/liangju-led";
 const COLORS = [{ name: "荧光黄", value: "#d9ff56" }, { name: "霓虹粉", value: "#ff75ad" }, { name: "天空蓝", value: "#70d9ff" }, { name: "薄荷绿", value: "#84f2b0" }, { name: "琥珀橙", value: "#ffbd64" }, { name: "纯白", value: "#ffffff" }];
@@ -133,7 +133,10 @@ export default function Prototype() {
   const { bottomInset } = useKeyboardInsets();
   const [raw, setRaw] = useState(EXAMPLES[0].raw);
   const [result, setResult] = useState(EXAMPLES[0].result);
-  const [mode, setMode] = useState<"smart" | "raw">("smart");
+  const [mode, setMode] = useState<"smart" | "raw">("raw");
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
   const [color, setColor] = useState(0);
   const [direction, setDirection] = useState<Direction>("left");
   const [speed, setSpeed] = useState(3);
@@ -160,15 +163,30 @@ export default function Prototype() {
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape" && full) setFull(false); };
     window.addEventListener("keydown", escape); return () => window.removeEventListener("keydown", escape);
   }, [full]);
+  useEffect(() => {
+    if (panel !== "download") return;
+    const interval = setInterval(() => setDownloadProgress(p => Math.min(100, p + 10)), 220);
+    return () => clearInterval(interval);
+  }, [panel]);
+  useEffect(() => {
+    if (panel === "download" && downloadProgress === 100) {
+      setModelReady(true); setAiEnabled(true); setPanel("settings");
+    }
+  }, [downloadProgress, panel]);
+  function toggleAi() {
+    if (aiEnabled) { setAiEnabled(false); setMode("raw"); }
+    else if (modelReady) setAiEnabled(true);
+    else { setDownloadProgress(0); openPanel("download"); }
+  }
   function closePanel() { keyboard.hide(); setPanel(null); if (timer.current) clearTimeout(timer.current); }
   function openPanel(next: Panel) { keyboard.hide(); setPanel(next); }
   function edit(manual = false) { setEditingRaw(manual || mode === "raw"); setDraft(manual ? "" : text); openPanel("edit"); }
   function saveText() { if (!draft.trim()) return; if (editingRaw) { setRaw(draft.trim()); setResult(draft.trim()); setMode("raw"); } else setResult(draft.trim()); closePanel(); }
   function showVoice() { held.current = false; setHolding(false); setVoiceState("ready"); openPanel("voice"); }
   function processExample() { setVoiceState("processing"); timer.current = setTimeout(() => setVoiceState("done"), 700); }
-  function applyExample() { const e = EXAMPLES[sample]; setRaw(e.raw); setResult(e.result); setMode("smart"); setColor(e.color); setDirection(e.direction); closePanel(); }
+  function applyExample() { const e = EXAMPLES[sample]; setRaw(e.raw); setResult(e.result); setMode(aiEnabled ? "smart" : "raw"); if(aiEnabled) { setColor(e.color); setDirection(e.direction); } closePanel(); }
   function showFull() { keyboard.hide(); setPlaying(true); setFull(true); }
-  const titles = { color: "选择文字颜色", direction: "滚动方向", speed: "调整滚动速度", edit: editingRaw ? "手动输入" : "修改展示文字", voice: "试一试语音整理", settings: "灯牌设置", about: "关于亮句" };
+  const titles = { color: "选择文字颜色", direction: "滚动方向", speed: "调整滚动速度", edit: editingRaw ? "手动输入" : "修改展示文字", voice: "试一试语音整理", settings: "灯牌设置", about: "关于亮句", download: "正在准备 AI · 演示" };
   return <div className="lj-app" style={{ "--led-color": COLORS[color].value } as CSSProperties}>
     <div className="lj-main-shell" inert={full}>
     <MobileScroll className="lj-scroll">
@@ -176,25 +194,26 @@ export default function Prototype() {
         <header className="lj-header"><img className="lj-app-icon" src="/app-icon.png" alt="亮句图标" draggable={false} /><div className="lj-brand">亮句</div><button className="local-indicator" onClick={() => openPanel("settings")}><CircleIcon weight="fill" size={7} />交互演示</button><button className="icon-button settings-button" aria-label="打开设置" onClick={() => openPanel("settings")}><GearSixIcon size={23} /></button></header>
         <section className="lj-heading"><h1>说出来，<span>亮出来。</span></h1><p>一句话，让对方看懂。</p></section>
         <section className="preview-board" aria-label="灯牌预览"><LedCanvas text={text} color={COLORS[color].value} direction={direction} speed={speed} playing={previewPlaying} dots={dots} size={size} /><div className="preview-top"><span>预览</span><button aria-label="全屏预览" onClick={showFull}><ArrowsOutSimpleIcon size={20} /></button></div><button className="preview-play" aria-label={previewPlaying ? "暂停预览" : "播放预览"} onClick={() => setPreviewPlaying(v => !v)}>{previewPlaying ? <PauseIcon size={13} weight="fill" /> : <PlayIcon size={13} weight="fill" />}</button></section>
-        <section className="ai-section"><div className="section-heading"><h2>{mode === "smart" ? "AI 精简" : "原话显示"}</h2><button className="text-button" onClick={() => edit()}><PencilSimpleLineIcon size={18} />编辑</button></div><p className="original" title={raw}>原话：{raw}</p><button className="result-text" onClick={() => edit()} aria-label="编辑展示文字">{text}</button><div className="mode-switch" role="group" aria-label="文字处理模式"><button aria-pressed={mode === "smart"} onClick={() => setMode("smart")}>智能精简</button><button aria-pressed={mode === "raw"} onClick={() => setMode("raw")}>原话显示</button></div></section>
+        <section className="ai-section"><div className="section-heading"><h2>{mode === "smart" ? "AI 精简" : "原话显示"}</h2><button className="text-button" onClick={() => edit()}><PencilSimpleLineIcon size={18} />编辑</button></div><p className="original" title={raw}>原话：{raw}</p><button className="result-text" onClick={() => edit()} aria-label="编辑展示文字">{text}</button><div className="mode-switch" role="group" aria-label="文字处理模式"><button aria-pressed={mode === "smart"} onClick={() => aiEnabled ? setMode("smart") : openPanel("settings")}>{aiEnabled ? "智能精简" : "开启 AI 整理"}</button><button aria-pressed={mode === "raw"} onClick={() => setMode("raw")}>原话显示</button></div></section>
         <section className="appearance"><h2>外观设置</h2><div className="appearance-controls"><button onClick={() => openPanel("color")} aria-label="选择颜色"><CircleIcon weight="fill" size={26} color={COLORS[color].value} /><span>颜色</span><CaretRightIcon size={12} /></button><button onClick={() => openPanel("direction")} aria-label="选择滚动方向"><DirectionIcon size={26} /><span>{currentDirection.name}</span><CaretRightIcon size={12} /></button><button onClick={() => openPanel("speed")} aria-label="调整速度"><SlidersHorizontalIcon size={25} /><span>速度</span><CaretRightIcon size={12} /></button></div></section>
       </main>
     </MobileScroll>
     </div>
     {!full && <footer className="lj-actions" style={{ bottom: bottomInset }}><button className={`voice-button ${holding ? "holding" : ""}`} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); held.current = true; setHolding(true); }} onPointerUp={() => { if (held.current) showVoice(); }} onPointerCancel={() => { held.current = false; setHolding(false); }} onClick={e => { if (e.detail === 0) showVoice(); }}><span><MicrophoneIcon size={28} weight="bold" />{holding ? "松开，查看演示" : "按住说话"}</span><small>{holding ? "原型演示，不会录制声音" : "松开生成，再确认上屏 · 演示"}</small></button><button className="primary-button display-button" onClick={showFull}><ArrowsOutSimpleIcon size={25} />亮屏展示</button><button className="manual-button" onClick={() => edit(true)}>手动输入<CaretRightIcon size={15} /></button></footer>}
     {full && <section className="presentation" role="dialog" aria-modal="true" aria-label="全屏灯牌"><LedCanvas text={text} color={COLORS[color].value} direction={direction} speed={speed} playing={playing} large rotated={rotated} dots={dots} size={size} /><div className="presentation-top"><button className="glass-button" autoFocus onClick={() => setFull(false)}><ArrowLeftIcon size={19} />返回编辑</button><span>{currentDirection.name}</span></div><div className="presentation-bottom" style={{ bottom: bottomInset + 12 }}><button className="glass-button" onClick={() => setPlaying(v => !v)}>{playing ? <PauseIcon size={19} /> : <PlayIcon size={19} />}{playing ? "暂停" : "继续"}</button><button className="glass-button" aria-pressed={rotated} onClick={() => setRotated(v => !v)}><ArrowsClockwiseIcon size={20} />{rotated ? "竖屏" : "横屏"}</button></div></section>}
-    <BottomSheet open={panel !== null} onOpenChange={v => { if (!v) closePanel(); }} title={panel ? titles[panel] : ""} description={panel === "voice" ? "使用示例体验，不会打开麦克风。" : panel === "edit" ? "确认文字后再展示，最多 80 个字符。" : ""} snap={panel === "voice" || panel === "about" ? .8 : panel === "settings" ? .65 : .6}>
+    <BottomSheet open={panel !== null} onOpenChange={v => { if (!v) closePanel(); }} title={panel ? titles[panel] : ""} description={panel === "voice" ? "使用示例体验，不会打开麦克风。" : panel === "edit" ? "确认文字后再展示，最多 80 个字符。" : ""} snap={panel === "voice" || panel === "about" ? .8 : panel === "settings" ? .85 : .6}>
       <div className="lj-sheet"><button className="sheet-close icon-button" aria-label="关闭面板" onClick={closePanel}><XIcon size={20} /></button>
         {panel === "color" && <><div className="color-grid">{COLORS.map((c, i) => <button key={c.name} aria-pressed={color === i} onClick={() => setColor(i)}><span className="color-sample"><CircleIcon size={42} weight="fill" color={c.value} />{color === i && <CheckIcon size={20} color="#10120f" weight="bold" />}</span>{c.name}</button>)}</div><button className="primary-button" onClick={closePanel}>完成</button></>}
         {panel === "direction" && <><div className="direction-list">{DIRECTIONS.map(({ id, name, Icon }) => <button key={id} aria-pressed={direction === id} onClick={() => setDirection(id)}><Icon size={23} />{name}{direction === id && <CheckIcon size={19} />}</button>)}</div><p className="hint">短句适合静止展示，长句可以滚动阅读。</p><button className="primary-button" onClick={closePanel}>完成</button></>}
         {panel === "speed" && <><div className="sheet-led"><LedCanvas text={text} color={COLORS[color].value} direction={direction === "still" ? "left" : direction} speed={speed} playing dots={dots} /></div><div className="range-heading"><label htmlFor="speed">滚动速度</label><strong>{["", "很慢", "慢速", "中速", "快速", "很快"][speed]}</strong></div><input id="speed" type="range" min="1" max="5" step="1" value={speed} onChange={e => setSpeed(Number(e.target.value))} /><div className="range-labels"><span>慢一点</span><span>快一点</span></div><button className="primary-button" onClick={closePanel}>完成</button></>}
         {panel === "edit" && <><label className="input-label" htmlFor="message">展示文字</label><KeyboardTextarea id="message" className="message-input" value={draft} onChange={e => setDraft(e.target.value)} maxLength={80} placeholder="输入想让对方看到的话…" rows={3} /><div className="input-meta"><span>{editingRaw ? "手动输入将按原话显示" : "只修改精简结果，保留原话"}</span><span>{draft.length}/80</span></div><button className="primary-button" disabled={!draft.trim()} onClick={saveText}><CheckIcon size={20} />使用这句话</button></>}
-        {panel === "voice" && <><div className="example-tabs" role="group" aria-label="语音演示场景">{EXAMPLES.map((e, i) => <button key={e.name} disabled={voiceState === "processing"} aria-pressed={sample === i} onClick={() => { setSample(i); setVoiceState("ready"); }}>{e.name}</button>)}</div><div className="voice-transcript"><span>示例语音内容</span><p>{EXAMPLES[sample].raw}</p></div><div aria-live="polite" className="voice-result">{voiceState === "processing" ? <p className="processing"><SparkleIcon size={23} />正在演示整理过程…</p> : voiceState === "done" ? <><span><SparkleIcon size={16} />精简结果 · 示例</span><strong>{EXAMPLES[sample].result}</strong>{sample === 2 && <p>同时设置为霓虹粉、向上滚动</p>}</> : <p>去掉口头语，保留最想表达的内容。</p>}</div><button className="primary-button" disabled={voiceState === "processing"} onClick={voiceState === "done" ? applyExample : processExample}>{voiceState === "done" ? "使用这句话" : voiceState === "processing" ? "正在整理…" : "预览整理效果"}</button><p className="hint">此处展示预设结果。安卓正式版将接入离线语音识别与本地 AI。</p></>}
-        {panel === "settings" && <><div className="settings-row"><span>文字样式</span><div className="small-switch"><button aria-pressed={dots} onClick={() => setDots(true)}>LED 点阵</button><button aria-pressed={!dots} onClick={() => setDots(false)}>清晰大字</button></div></div><div className="range-heading"><label htmlFor="font-size">字号</label><strong>{Math.round(size * 100)}%</strong></div><input id="font-size" type="range" min="0.75" max="1.5" step="0.25" value={size} onChange={e => setSize(Number(e.target.value))} /><button className="about-entry" onClick={() => openPanel("about")}><InfoIcon size={22} /><span>关于<small>作者、项目说明与 GitHub</small></span><CaretRightIcon size={17} /></button><button className="primary-button" onClick={closePanel}>完成</button></>}
+        {panel === "voice" && <><div className="example-tabs" role="group" aria-label="语音演示场景">{EXAMPLES.map((e, i) => <button key={e.name} disabled={voiceState === "processing"} aria-pressed={sample === i} onClick={() => { setSample(i); setVoiceState("ready"); }}>{e.name}</button>)}</div><div className="voice-transcript"><span>示例语音内容</span><p>{EXAMPLES[sample].raw}</p></div><div aria-live="polite" className="voice-result">{voiceState === "processing" ? <p className="processing"><SparkleIcon size={23} />{aiEnabled ? "正在演示整理过程…" : "正在演示语音转文字…"}</p> : voiceState === "done" ? <><span><SparkleIcon size={16} />{aiEnabled ? "精简结果 · 示例" : "识别原话 · 示例"}</span><strong>{aiEnabled ? EXAMPLES[sample].result : EXAMPLES[sample].raw}</strong>{aiEnabled && sample === 2 && <p>同时设置为霓虹粉、向上滚动</p>}</> : <p>{aiEnabled ? "去掉口头语，保留最想表达的内容。" : "AI 已关闭，识别后直接显示原话。"}</p>}</div><button className="primary-button" disabled={voiceState === "processing"} onClick={voiceState === "done" ? applyExample : processExample}>{voiceState === "done" ? "使用这句话" : voiceState === "processing" ? "正在整理…" : aiEnabled ? "预览整理效果" : "预览转写效果"}</button><p className="hint">此处展示预设结果。安卓版支持系统语音与可选本地 AI。</p></>}
+        {panel === "download" && <div className="model-download"><p>正在下载轻量模型 · 491 MB</p><strong aria-live="polite">{downloadProgress}%</strong><progress aria-label="模型下载进度演示" value={downloadProgress} max={100} /><p className="hint">这是进度演示，不会实际下载文件。安卓版会显示真实下载量，支持取消和断点续传。</p><button className="primary-button" onClick={() => openPanel("settings")}>取消下载</button></div>}
+        {panel === "settings" && <><div className="settings-row ai-setting"><span>启用 AI 纠错精简</span><button className="ai-toggle" role="switch" aria-label="启用 AI 纠错精简" aria-checked={aiEnabled} onClick={toggleAi}><span /></button></div><p className="hint ai-explanation">首次开启下载约 491 MB，离线纠错精简；关闭时直接语音转文字。</p><p className="hint">系统语音可能需要联网，取决于手机服务。此网页仅演示交互。</p><div className="settings-row"><span>文字样式</span><div className="small-switch"><button aria-pressed={dots} onClick={() => setDots(true)}>LED 点阵</button><button aria-pressed={!dots} onClick={() => setDots(false)}>清晰大字</button></div></div><div className="range-heading"><label htmlFor="font-size">字号</label><strong>{Math.round(size * 100)}%</strong></div><input id="font-size" type="range" min="0.75" max="1.5" step="0.25" value={size} onChange={e => setSize(Number(e.target.value))} /><button className="about-entry" onClick={() => openPanel("about")}><InfoIcon size={22} /><span>关于<small>作者、项目说明与 GitHub</small></span><CaretRightIcon size={17} /></button><button className="primary-button" onClick={closePanel}>完成</button></>}
         {panel === "about" && <>
-          <div className="about-brand"><img src="/app-icon.png" alt="亮句应用图标" draggable={false} /><strong>亮句</strong><span>说出来，亮出来。</span><small>v0.2.0 · 安卓界面预览</small></div>
+          <div className="about-brand"><img src="/app-icon.png" alt="亮句应用图标" draggable={false} /><strong>亮句</strong><span>说出来，亮出来。</span><small>v0.2.1 · 安卓界面预览</small></div>
           <dl className="about-details"><div><dt>作者</dt><dd>{AUTHOR}</dd></div></dl>
-          <section className="about-copy"><h3>让一句话被看见</h3><p>把想表达的话变成醒目的手持灯牌，支持 LED 点阵、文字大小、颜色与连续滚动。适合应援、接人和日常交流。</p><h3>当前版本说明</h3><p>此网页用于预览界面，语音与 AI 使用预设示例，不会开启麦克风。真实离线功能在原生安卓版中实现，安装 APK 并下载模型后使用。</p><p>内容仅保存在本次页面会话中，刷新后重置。展示前请核对人名、地点、数字和否定词。</p></section>
+          <section className="about-copy"><h3>让一句话被看见</h3><p>把想表达的话变成醒目的手持灯牌，支持 LED 点阵、文字大小、颜色与连续滚动。适合应援、接人和日常交流。</p><h3>当前版本说明</h3><p>此网页用于预览界面，语音与 AI 使用预设示例，不会开启麦克风。安卓版默认直接使用系统语音，AI 为可选功能，开启后才下载模型。</p><p>内容仅保存在本次页面会话中，刷新后重置。展示前请核对人名、地点、数字和否定词。</p></section>
           <a className="github-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubLogoIcon size={23} /><span>GitHub 项目<small>{AUTHOR}/liangju-led</small></span><ArrowSquareOutIcon size={19} /></a>
           <button className="primary-button" onClick={() => openPanel("settings")}>返回设置</button>
         </>}

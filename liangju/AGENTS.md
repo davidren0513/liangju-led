@@ -82,3 +82,5 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 
 - Native Android implementation lives in ../android-app (Android 14+ / arm64); this browser preview remains a clearly labeled UI demonstration.
 - User requested light liquid-glass effects on cards, sheets and actions, keeping the LED stage high contrast. Icon source: ../assets/icon/liangju-icon-master.png.
+
+- AI is opt-in and defaults off. Disabled means speech-to-text without AI or model download; first enable shows a clearly labeled download progress demo. Native app downloads only the selected AI model and uses the phone speech service by default.

@@ -26,10 +26,11 @@ class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var models: ModelStore
     private lateinit var voice: VoiceEngine
+    private lateinit var systemVoice: SystemVoiceEngine
     private lateinit var ai: AiEngine
     private var work: Job? = null
     private var state = "idle"
-    private var status = "先下载模型，即可离线说话亮屏"
+    private var status = "直接说话转文字 · AI 整理默认关闭"
     private var draft = "借过一下，谢谢"
     private var original = ""
     private var fullscreen = false
@@ -44,14 +45,21 @@ class MainActivity : Activity() {
     private lateinit var preview: LedView
     private var modelLabel: TextView? = null
     private var modelDialog: AlertDialog? = null
+    private var settingsDialog: AlertDialog? = null
+    private var aiSwitch: Switch? = null
+    private var downloadDialog: AlertDialog? = null
+    private var aiEnabled: Boolean
+        get() = prefs.getBoolean("ai_enabled", false)
+        set(value) { prefs.edit().putBoolean("ai_enabled", value).apply() }
     private var downloadButtons = listOf<Button>()
     private val prefs by lazy { getSharedPreferences("liangju", MODE_PRIVATE) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        models = ModelStore(this); voice = VoiceEngine(models); ai = AiEngine(models)
+        models = ModelStore(this); voice = VoiceEngine(models); systemVoice = SystemVoiceEngine(this); ai = AiEngine(models)
         draft = prefs.getString("draft", draft)!!
         style = DisplayStyle(prefs.getInt("color", lime), prefs.getString("direction", "left")!!, prefs.getInt("speed",3), prefs.getFloat("scale",1f), prefs.getBoolean("dots",true))
-        if (models.ready("speech")) status = if (models.ready(models.aiGroup)) "语音与 AI 已就绪 · 全程在手机处理" else "语音已就绪 · 可在设置中下载 AI"
+        if (aiEnabled && !models.ready(models.aiGroup)) aiEnabled = false
+        if (aiEnabled) status = "AI 整理已开启 · 识别后在手机本地整理"
         buildUi()
         onBackInvokedDispatcher.registerOnBackInvokedCallback(0) { if (fullscreen) exitFull() else if (state != "idle") cancelWork() else finish() }
     }
@@ -128,7 +136,7 @@ class MainActivity : Activity() {
         statusLabel=text(status,12f,muted).apply { accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE }
         val actions=column().apply { background=glass(28).apply { colors=intArrayOf(0xf52a3426.toInt(),0xf51a241d.toInt(),0xf52b3430.toInt()) };setPadding(dp(12),dp(12),dp(12),dp(12)) }
         actions.add(statusLabel,gap=8)
-        mic=button("●  点击说话") { when(state) { "recording" -> voice.stopRecording(); "idle" -> requestMic(); else -> cancelWork() } }; actions.add(mic,58,gap=10)
+        mic=button("●  点击说话") { when(state) { "recording" -> stopRecording(); "idle" -> requestMic(); else -> cancelWork() } }; actions.add(mic,58,gap=10)
         display=button("确认文字，立即亮屏  ↗",true) { enterFull() }; actions.add(display,52,gap=0)
         root.addView(actions,FrameLayout.LayoutParams(maxWidth,-2,Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin=dp(8) })
         refreshButtons()
@@ -137,8 +145,9 @@ class MainActivity : Activity() {
     private fun refreshButtons() {
         if (!::mic.isInitialized || fullscreen) return
         mic.text=when(state) { "recording"->"■  结束录音"; "idle"->"●  点击说话"; "cancelling"->"正在停止…"; else->"停止当前任务" }
-        mic.isEnabled=state!="cancelling"; organize.isEnabled=state=="idle"; display.isEnabled=state=="idle"
-        editor.isEnabled=state=="idle"; downloadButtons.forEach { it.isEnabled=state=="idle" }
+        mic.isEnabled=state!="cancelling"; organize.isEnabled=state=="idle"; organize.text=if(aiEnabled) "✦  AI 纠错精简" else "✦  开启 AI 整理"; display.isEnabled=state=="idle"
+        editor.isEnabled=state=="idle"; downloadButtons.forEach { it.isEnabled=state=="idle" }; aiSwitch?.isEnabled=state=="idle"
+        aiSwitch?.isChecked=aiEnabled
     }
     private fun task(kind: String, block: suspend () -> Unit) {
         if(state!="idle")return
@@ -156,13 +165,22 @@ class MainActivity : Activity() {
                     else -> "处理未完成，现有文字已保留，可继续编辑"
                 })
             }
-            finally { state="idle"; refreshButtons(); save() }
+            finally { state="idle"; refreshButtons(); save(); if(kind=="downloading") Toast.makeText(this@MainActivity,status,Toast.LENGTH_LONG).show() }
         }
     }
     private fun cancelWork() { if(state=="idle")return; voice.stopRecording(); ai.cancel(); state="cancelling"; setStatus("正在停止当前任务…"); refreshButtons(); work?.cancel() }
+    private fun stopRecording() {
+        voice.stopRecording(); systemVoice.stop(); state="recognizing"; refreshButtons(); setStatus("正在识别语音…")
+    }
     private fun hideKeyboard() { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(editor.windowToken,0); editor.clearFocus() }
     private fun requestMic() {
-        if(!models.ready("speech")) { showModels(); return }
+        if(!systemVoice.available() && !models.ready("speech")) {
+            AlertDialog.Builder(this).setTitle("系统语音暂不可用")
+                .setMessage("这台手机未提供可调用的系统语音服务。你可以使用键盘上的语音输入；也可单独下载 240 MB 离线语音模型，无需开启 AI。")
+                .setPositiveButton("键盘输入") { _,_ -> editor.requestFocus(); (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(editor,InputMethodManager.SHOW_IMPLICIT) }
+                .setNeutralButton("离线语音") { _,_ -> download("speech") }.setNegativeButton("取消",null).show()
+            return
+        }
         hideKeyboard()
         if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO),41) else record()
     }
@@ -173,20 +191,32 @@ class MainActivity : Activity() {
     private fun record() {
         voice.prepareRecording(); ai.prepare()
         task("recording") {
-            setStatus("正在听你说 · 最长 20 秒，点击按钮结束")
-            val samples=voice.record { seconds -> withContext(Dispatchers.Main) { setStatus("正在录音  ${seconds}s / 20s · 点击结束") } }
-            state="recognizing"; refreshButtons(); setStatus("正在手机上识别语音…")
-            val raw=voice.recognize(samples)
-            original=raw; originalLabel.text="原话：$raw"; editor.setText(raw.take(80))
-            if(models.ready(models.aiGroup)) {
-                state="ai"; refreshButtons(); setStatus("正在手机上纠错、提炼短句…")
-                val result=ai.shorten(raw); editor.setText(result.text); setStatus(result.warning ?: "整理完成，请确认后亮屏")
-            } else setStatus("已识别。可直接亮屏，或在设置中下载 AI 再整理")
+            val raw = if(systemVoice.available()) {
+                setStatus("正在启动系统语音 · 是否联网由手机服务决定")
+                systemVoice.recognize(
+                    onListening={ setStatus("正在听你说 · 点击结束，最长 20 秒") },
+                    onProcessing={ state="recognizing";refreshButtons();setStatus("系统正在识别语音…") }
+                )
+            } else {
+                setStatus("正在离线录音 · 最长 20 秒，点击结束")
+                val samples=voice.record { seconds -> withContext(Dispatchers.Main) { setStatus("正在录音  ${seconds}s / 20s · 点击结束") } }
+                state="recognizing";refreshButtons();setStatus("正在手机上识别语音…")
+                voice.recognize(samples)
+            }
+            acceptTranscript(raw)
         }
     }
+    internal suspend fun acceptTranscript(raw:String) {
+            original=raw; originalLabel.text="原话：$raw"; editor.setText(raw.take(80))
+            if(aiEnabled && models.ready(models.aiGroup)) {
+                state="ai"; refreshButtons(); setStatus("正在手机上纠错、提炼短句…")
+                val result=ai.shorten(raw); editor.setText(result.text); setStatus(result.warning ?: "整理完成，请确认后亮屏")
+            } else setStatus("已转为文字 · AI 整理关闭，请确认后亮屏")
+    }
     private fun organizeTyped() {
+        if(!aiEnabled) { showSettings(); return }
         val raw=editor.text.toString().trim(); if(raw.isBlank()) { setStatus("先输入或说一句话");return }
-        if(!models.ready(models.aiGroup)) { showModels(); return }
+        if(!models.ready(models.aiGroup)) { download(models.aiGroup,enableAi=true); return }
         hideKeyboard(); ai.prepare()
         task("ai") { original=raw; originalLabel.text="原话：$raw"; setStatus("正在手机上纠错、提炼短句…"); val result=ai.shorten(raw); editor.setText(result.text); setStatus(result.warning ?: "请确认后亮屏") }
     }
@@ -202,7 +232,24 @@ class MainActivity : Activity() {
     }
     private fun showSettings() {
         hideKeyboard()
-        AlertDialog.Builder(this).setTitle("设置").setItems(arrayOf("离线语音与 AI 模型","文字大小与点阵","关于")) { _,i-> when(i) { 0->showModels();1->showTypography();else->showAbout() } }.setNegativeButton("关闭",null).show()
+        val panel=column().apply { setPadding(dp(22),dp(12),dp(22),dp(4)) }
+        aiSwitch=Switch(this).apply {
+            text="启用 AI 纠错精简";setTextColor(white);textSize=17f;minHeight=dp(52);isChecked=aiEnabled
+            setOnCheckedChangeListener { _,enabled ->
+                if(enabled==aiEnabled || state!="idle") return@setOnCheckedChangeListener
+                aiEnabled=enabled
+                if(enabled && !models.ready(models.aiGroup)) download(models.aiGroup,enableAi=true)
+                else { setStatus(if(enabled) "AI 整理已开启 · 识别后在手机本地整理" else "AI 整理已关闭 · 语音直接转文字");refreshButtons() }
+            }
+        }
+        panel.add(aiSwitch!!,gap=4)
+        panel.add(text("首次开启下载约 ${models.total(models.aiGroup)/1_000_000} MB，离线纠错精简；关闭时直接语音转文字。",12f,muted))
+        panel.add(text("系统语音可能需要联网，取决于手机服务。",12f,muted))
+        panel.add(button("模型管理（可选）") { settingsDialog?.dismiss();showModels() })
+        panel.add(button("文字大小与点阵") { settingsDialog?.dismiss();showTypography() })
+        panel.add(button("关于") { settingsDialog?.dismiss();showAbout() })
+        settingsDialog=AlertDialog.Builder(this).setTitle("设置").setView(ScrollView(this).apply { addView(panel) }).setNegativeButton("完成",null).create()
+        settingsDialog?.setOnDismissListener { aiSwitch=null };settingsDialog?.show();refreshButtons()
     }
     private fun showTypography() {
         val panel=column().apply { setPadding(dp(22),dp(12),dp(22),dp(12)) }
@@ -221,13 +268,13 @@ class MainActivity : Activity() {
     }
     private fun showModels() {
         val panel=column().apply { setPadding(dp(22),dp(12),dp(22),dp(4)) }
-        panel.add(text("首次下载需要联网。完成后录音和文字整理均在手机本地运行，不上传音频或文本。",14f,muted))
-        panel.add(text("建议使用 Wi-Fi。轻量组合需约 1 GB 可用空间，增强组合需约 1.5 GB。模型来自 Hugging Face，连接失败时可稍后继续下载。",12f,muted))
+        panel.add(text("模型均为可选，不随安装包提供。AI 默认关闭；系统语音无需下载这里的模型，是否联网取决于手机服务。",14f,muted))
+        panel.add(text("AI 在设置中开启后自动下载。离线语音可作为系统服务不可用时的备用。模型来自 Hugging Face，可断点续传，建议使用 Wi-Fi。",12f,muted))
         modelLabel=text(if(state=="idle") "${models.aiName()} · 语音 ${if(models.ready("speech"))"已就绪" else "未下载"} · AI ${if(models.ready(models.aiGroup))"已就绪" else "未下载"}" else status,13f,lime); panel.add(modelLabel!!)
         val speech=button("${if(models.ready("speech"))"✓ 已安装" else "下载 / 继续"} 语音模型 · 240 MB") { download("speech") }
-        val llm=button("${if(models.ready(models.aiGroup))"✓ 已安装" else "下载 / 继续"} ${models.aiName()} · ${models.total(models.aiGroup)/1_000_000} MB") { download(models.aiGroup) }
-        val compact=button("${if(models.aiGroup=="ai")"✓ " else ""}轻量 0.5B") { if(state=="idle") { models.aiGroup="ai";setStatus("已选择轻量 AI，请确认模型已安装");modelDialog?.dismiss();showModels() } }
-        val quality=button("${if(models.aiGroup=="ai_quality")"✓ " else ""}增强 1.5B") { if(state=="idle") { models.aiGroup="ai_quality";setStatus("已选择增强 AI，请确认模型已安装");modelDialog?.dismiss();showModels() } }
+        val llm=button("${if(models.ready(models.aiGroup))"✓ 已安装" else "下载 / 继续"} ${models.aiName()} · ${models.total(models.aiGroup)/1_000_000} MB") { download(models.aiGroup,enableAi=aiEnabled) }
+        val compact=button("${if(models.aiGroup=="ai")"✓ " else ""}轻量 0.5B") { if(state=="idle") { selectAiModel("ai") } }
+        val quality=button("${if(models.aiGroup=="ai_quality")"✓ " else ""}增强 1.5B") { if(state=="idle") { selectAiModel("ai_quality") } }
         panel.add(row(compact,quality))
         panel.add(text("轻量占用更少；增强模型更适合纠错与提炼。只需下载所选一款 AI，结果仍需确认。",12f,muted))
         val importButton=button("从文件导入模型") { if(state=="idle") { modelDialog?.dismiss();chooseModelFiles() } }
@@ -236,13 +283,37 @@ class MainActivity : Activity() {
         modelDialog=AlertDialog.Builder(this).setTitle("离线模型").setView(ScrollView(this).apply { addView(panel) }).setNegativeButton("完成",null).create()
         modelDialog?.setOnDismissListener { modelLabel=null;downloadButtons=emptyList() }; modelDialog?.show();refreshButtons()
     }
-    private fun download(group:String) {
-        if(models.ready(group)) { setStatus("模型已经安装，可以离线使用");return }
+    private fun selectAiModel(group:String) {
+        models.aiGroup=group;setStatus("已选择${models.aiName()}");modelDialog?.dismiss();showModels()
+        if(aiEnabled && !models.ready(group)) download(group,enableAi=true)
+    }
+    private fun download(group:String, enableAi:Boolean=false) {
+        if(state!="idle")return
+        if(models.ready(group)) { if(enableAi)aiEnabled=true;refreshButtons();setStatus("模型已经安装，无需重复下载");return }
         task("downloading") {
-            setStatus("正在连接模型服务器…")
-            models.install(group) { current,total -> withContext(Dispatchers.Main) { setStatus("${if(group=="speech")"语音" else "AI"}模型 ${current*100/total}% · ${current/1_000_000} / ${total/1_000_000} MB${if(current==total)" · 正在校验" else ""}") } }
-            setStatus("${if(group=="speech")"语音" else "AI"}模型已校验安装，可离线使用")
-            downloadButtons.getOrNull(if(group=="speech")0 else 1)?.text="✓ ${if(group=="speech")"语音" else "AI"}模型已安装"
+            var success=false
+            val panel=column().apply { setPadding(dp(24),dp(12),dp(24),dp(8)) }
+            val label=text("正在连接… 0 / ${models.total(group)/1_000_000} MB",14f,lime).apply { accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE }
+            val progress=ProgressBar(this@MainActivity,null,android.R.attr.progressBarStyleHorizontal).apply { max=100;isIndeterminate=true }
+            panel.add(label);panel.add(progress,16);panel.add(text("建议使用 Wi-Fi。取消后保留下载进度，下次开启可继续。",12f,muted))
+            downloadDialog=AlertDialog.Builder(this@MainActivity).setTitle(if(group=="speech") "下载离线语音模型" else "正在准备 AI · ${models.aiName()}")
+                .setView(panel).setNegativeButton("取消下载",null).setCancelable(false).create()
+            downloadDialog?.show()
+            downloadDialog?.getButton(AlertDialog.BUTTON_NEGATIVE)?.setOnClickListener { cancelWork();it.isEnabled=false }
+            try {
+                setStatus("正在连接模型服务器…")
+                models.install(group) { current,total -> withContext(Dispatchers.Main) {
+                    val message="${current*100/total}% · ${current/1_000_000} / ${total/1_000_000} MB${if(current==total)" · 正在校验" else ""}"
+                    label.text=message;progress.isIndeterminate=false;progress.progress=(current*100/total).toInt();setStatus(message)
+                } }
+                if(enableAi) aiEnabled=true
+                success=true
+                setStatus(if(group=="speech") "离线语音模型已就绪" else if(aiEnabled) "AI 已开启，识别后自动纠错精简" else "AI 模型已安装，可在设置中开启")
+                downloadButtons.getOrNull(if(group=="speech")0 else 1)?.text="✓ ${if(group=="speech")"语音" else "AI"}模型已安装"
+            } finally {
+                if(!success && enableAi) aiEnabled=false
+                downloadDialog?.dismiss();downloadDialog=null
+            }
         }
     }
     @Suppress("DEPRECATION")
@@ -267,13 +338,13 @@ class MainActivity : Activity() {
                     withContext(Dispatchers.Main) {setStatus("正在导入并校验模型 ${n*100/total}%")}
                 }
             }
-            setStatus("模型导入完成。请在设置中确认语音与当前 AI 模型均已就绪")
+            setStatus("模型导入完成。AI 需在设置中开启；系统语音无需额外模型")
         }
     }
     private fun showAbout() {
         val content=column().apply {setPadding(dp(24),dp(8),dp(24),dp(8))}
         content.add(ImageView(this).apply {setImageResource(R.mipmap.ic_launcher);contentDescription="亮句应用图标"},92)
-        content.add(text("亮句  0.2.0",24f,lime));content.add(text("作者  davidren0513\n\n说话、整理、亮屏。支持文字大小、连续滚动和本地语音 / AI。\n\nAndroid 14+ · arm64\nSenseVoice / sherpa-onnx\nQwen2.5 0.5B / 1.5B · llama.cpp\n\nAI 可能理解有误，请核对人名、地点、时间和否定含义后再展示。",14f,muted))
+        content.add(text("亮句  0.2.1",24f,lime));content.add(text("作者  davidren0513\n\n说话、整理、亮屏。支持文字大小、连续滚动、系统语音和可选本地 AI。\n\nAndroid 14+ · arm64\nSenseVoice / sherpa-onnx\nQwen2.5 0.5B / 1.5B · llama.cpp\n\nAI 可能理解有误，请核对人名、地点、时间和否定含义后再展示。",14f,muted))
         content.add(button("GitHub · 项目源码") { startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/davidren0513/liangju-led"))) })
         content.add(button("开源组件与模型说明") { val licenses=assets.open("THIRD_PARTY_NOTICES.txt").bufferedReader().use{it.readText()};AlertDialog.Builder(this).setTitle("开源说明").setMessage(licenses).setPositiveButton("知道了",null).show() })
         AlertDialog.Builder(this).setView(ScrollView(this).apply{addView(content)}).setPositiveButton("关闭",null).show()
@@ -296,5 +367,5 @@ class MainActivity : Activity() {
     override fun onConfigurationChanged(config:Configuration) {super.onConfigurationChanged(config);save();buildUi()}
     override fun onStop() {super.onStop();save();if(state in listOf("recording","recognizing","ai"))cancelWork();if(::preview.isInitialized)preview.playing=false}
     override fun onStart() {super.onStart();if(::preview.isInitialized)preview.playing=true}
-    override fun onDestroy() {voice.stopRecording();ai.cancel();scope.cancel();modelDialog?.dismiss();super.onDestroy()}
+    override fun onDestroy() {voice.stopRecording();ai.cancel();scope.cancel();downloadDialog?.dismiss();settingsDialog?.dismiss();modelDialog?.dismiss();super.onDestroy()}
 }

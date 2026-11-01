@@ -7,8 +7,8 @@ android {
         applicationId = "com.davidren.liangju"
         minSdk = 34
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { cppFlags += "-std=c++17"; arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DGGML_NATIVE=OFF") } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

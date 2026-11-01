@@ -148,3 +148,14 @@
   border:1px solid #d8f1c13b; box-shadow:inset 0 1px 0 #f1ffdd1a,0 -16px 55px #0005;
 }
 .about-brand img { width:76px; height:76px; border-radius:22px; margin-bottom:7px; border:1px solid #d8ff5633; }
+
+.ai-toggle { width: 50px; height: 30px; flex: 0 0 auto; border-radius: 20px; background: #4a5147; padding: 3px; border: 1px solid #798471; }
+.ai-toggle span { display: block; width: 22px; height: 22px; border-radius: 50%; background: #f4f7f0; transition: transform .2s; }
+.ai-toggle[aria-checked="true"] { background: #d9ff56; border-color: #eaffae; }
+.ai-toggle[aria-checked="true"] span { transform: translateX(20px); background: #202714; }
+.ai-explanation { margin-top: 0; }
+.model-download { display: grid; gap: 16px; }
+.model-download strong { color: #d9ff56; font-size: 34px; }
+.model-download progress { width: 100%; accent-color: #d9ff56; }
+
+.settings-row.ai-setting { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
