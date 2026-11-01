@@ -8,3 +8,17 @@ dist/
 .qa-venv/
 test-results/
 playwright-report/
+
+# Android build tools, local models and generated packages
+.build-tools/
+.gradle/
+.cxx/
+**/build/
+local.properties
+android-app/app/libs/
+android-app/third_party/
+*.apk
+*.gguf
+*.onnx
+
+offline-models/

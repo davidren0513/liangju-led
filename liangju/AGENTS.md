@@ -79,3 +79,6 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Scrolling messages must repeat continuously with roughly two characters of spacing, with the next copy entering before the previous copy fully exits; no full-screen blank wait. Apply to all four directions and both preview and presentation.
 
 - Settings ends with an About entry containing author, project notes and the GitHub repository link. Default author is the connected GitHub handle davidren0513.
+
+- Native Android implementation lives in ../android-app (Android 14+ / arm64); this browser preview remains a clearly labeled UI demonstration.
+- User requested light liquid-glass effects on cards, sheets and actions, keeping the LED stage high contrast. Icon source: ../assets/icon/liangju-icon-master.png.

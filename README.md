@@ -1,52 +1,59 @@
-# 亮句 Liangju
+# 亮句 · Liangju LED
 
-说出来，亮出来。面向安卓手持 LED 灯牌应用的交互原型。
+把想说的话变成手持 LED 灯牌。支持 Android 14 及以上、arm64 手机；黑底荧光黄配色，轻透玻璃卡片与点阵语音气泡图标。
 
-作者：[davidren0513](https://github.com/davidren0513) · 项目：[liangju-led](https://github.com/davidren0513/liangju-led)
+![应用图标](assets/icon/liangju-icon-512.png)
 
-> 当前版本为浏览器中的安卓界面原型，不是可安装的 APK。语音识别与 AI 精简使用明确标记的预设示例，尚未接入本地模型。
+## 项目结构
 
-## 功能
+- **`android-app/`**：原生 Kotlin 安卓应用，接入真实录音、离线中文识别和本地小模型。
+- **`liangju/`**：React 界面预览，保留 Pixel / iPhone 模拟器。网页中的语音和 AI 仍是明确标记的预设演示，真实功能在安卓应用内运行。
+- **`assets/icon/`**：图标主图和分发尺寸。
 
-- LED 点阵与清晰大字，字号、颜色、速度可调。
-- 静止展示、上下左右连续滚动；每轮之间约两个字的间距。
-- 手机内全屏展示、横向展示、暂停和继续。
-- 原话/智能精简切换、手动编辑及安卓键盘交互。
-- 借过、打车、应援三种语音整理流程演示。
-- 设置 → 关于：作者、版本说明和 GitHub 链接。
+## 安卓功能
 
-## 预览
+1. 点击说话，结束录音后在手机本地识别；单次最长 20 秒。
+2. 使用本地 AI 纠正明显错误、删除重复口头语、提炼短句。
+3. 同时保留原话与可编辑结果，用户确认后再亮屏。
+4. 支持四个方向连续滚动、静止显示、六种颜色、五档速度、50%–180% 字体大小、点阵 / 普通字体、全屏旋转。
+5. 循环文字间隔约两个字符，不等待上一整屏退出后再重播。
+6. 设置末尾提供“关于”，包含作者、说明、版本与 GitHub 地址。
 
-<img src="liangju/design/implementation-android-final.jpg" width="320" alt="亮句安卓主界面">
+## 离线模型与隐私
 
-## 本地运行
+首次在“设置 → 离线语音与 AI 模型”中下载，建议使用 Wi-Fi：
 
-使用 Node.js 22.12+ 与 npm。
+| 用途 | 模型 / 引擎 | 下载大小 |
+| --- | --- | --- |
+| 中文语音识别 | SenseVoice int8 / sherpa-onnx 2.0.1 | 约 240 MB |
+| 轻量 AI（默认） | Qwen2.5-0.5B-Instruct Q4_K_M / llama.cpp | 约 491 MB |
+| 增强 AI（可选） | Qwen2.5-1.5B-Instruct Q4_K_M / llama.cpp | 约 1.12 GB |
+
+模型来自固定版本的 Hugging Face 地址，支持断点续传，完成 SHA-256 校验后才标记可用。语音 + 轻量 AI 合计约 731 MB，预留至少 1 GB；语音 + 增强 AI 合计约 1.36 GB，预留至少 1.5 GB。只需下载所选一款 AI。网络无法连接模型源时可稍后继续下载，也可将清单中的文件传到手机，在模型设置中选择“从文件导入模型”。导入同样检查大小与 SHA-256。
+
+下载后可断网使用。音频仅留在内存，不上传、不写入音频文件；当前文字与样式存于应用私有目录。切到后台会停止录音和 AI 任务。模型下载可取消，未完成部分保留供下次续传。
+
+轻量模式优先体积与速度，增强模式适合更复杂的纠错和提炼。两款小模型都有理解和纠错能力限制。程序检查输出格式、数字变化和否定词变化及常见人物关系变化，异常时保留原话，但不能保证所有人名、地点与语义都正确。请在亮屏前核对。性能与耗电需在具体手机实测。
+
+## 构建与验证
+
+见 [安卓开发说明](android-app/README.md) 和 [验证记录](android-app/VALIDATION.md)。模型与构建产物不放入 Git 仓库。
+
+网页预览：
 
 ```sh
-git clone https://github.com/davidren0513/liangju-led.git
-cd liangju-led/liangju
+cd liangju
 npm ci
 npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
-浏览器访问 `http://127.0.0.1:4173/`。
-
 ```sh
-npm run build
 npm run check:runtime
+npm run build
 ```
 
-## 结构
+作者：**davidren0513**
 
-- `liangju/src/Prototype.tsx`：应用界面、灯牌渲染与交互。
-- `liangju/src/prototype.css`：应用样式。
-- `liangju/src/mobile/`：手机预览、键盘与面板组件。
-- `liangju/design/`：设计稿与界面验证截图。
-- [详细说明](liangju/README.md)
+GitHub：[davidren0513/liangju-led](https://github.com/davidren0513/liangju-led)
 
-## 后续开发
-
-接入原生安卓工程、麦克风权限、离线语音识别、本地语言模型及模型下载管理。文字纠错、专有名词保留、延迟、功耗与兼容性需要在真机上测试。
-
-本原型的输入只保留在当前页面状态中，刷新即重置。外部 GitHub 链接会打开 GitHub 网站。
+模型和依赖的上游许可与来源见 [开源说明](android-app/app/src/main/assets/THIRD_PARTY_NOTICES.txt)。

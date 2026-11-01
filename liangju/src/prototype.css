@@ -118,3 +118,33 @@
 .about-copy p { color:#b3c0a4; font-size:13px; line-height:1.8; margin:0 0 10px; }
 .github-link { display:flex; align-items:center; gap:12px; padding:16px 14px; background:#242e1b; border:1px solid #455734; border-radius:12px; text-decoration:none; color:#ddf8b7; margin:22px 0; }
 .github-link:focus-visible { outline:2px solid #d9ff56; outline-offset:3px; }
+
+/* Liquid glass surfaces, kept outside the high-contrast LED display. */
+.lj-scroll { background:radial-gradient(ellipse at 94% 17%,#3a4d2440,transparent 48%),radial-gradient(ellipse at 2% 65%,#36576d3b,transparent 50%),#0d100c; }
+.lj-header { gap:12px; }
+.lj-app-icon { width:37px; height:37px; border-radius:11px; border:1px solid #d9ff5633; box-shadow:0 4px 14px #0005; }
+.lj-brand { font-size:25px; }
+.lj-brand::after { display:none; }
+.result-text,.appearance-controls,.mode-switch,.voice-transcript,.github-link {
+  background:linear-gradient(132deg,#d6f4c51c 0%,#afddbd09 45%,#d3eeff12 100%);
+  border:1px solid #d6f4cc29;
+  box-shadow:inset 0 1px 0 #f4ffe521,inset 0 -1px 0 #a5d0ff0a,0 8px 22px #0002;
+  backdrop-filter:blur(18px) saturate(135%); -webkit-backdrop-filter:blur(18px) saturate(135%);
+  border-radius:17px;
+}
+.mode-switch { border-radius:28px; }
+.appearance-controls { height:58px; }
+.lj-actions {
+  background:linear-gradient(135deg,#b2d09920,#19241dd9 40%,#a2d2ed18);
+  border:1px solid #ddffb72a; border-bottom:0; border-radius:30px 30px 0 0;
+  box-shadow:inset 0 1px 0 #f4ffe526,0 -8px 34px #0003;
+  backdrop-filter:blur(28px) saturate(150%); -webkit-backdrop-filter:blur(28px) saturate(150%);
+}
+.voice-button { background:linear-gradient(120deg,#eaffbe14,#b2d8ed08); box-shadow:inset 0 1px 0 #edffd521; }
+.primary-button { background:linear-gradient(125deg,#e5ff8d,#d9ff56 55%,#c2e93c); box-shadow:inset 0 1px 0 #f4ffd4a3,0 4px 18px #bded3320; }
+.device-screen:has(.lj-app) .bottom-sheet {
+  background:linear-gradient(138deg,#354334ed,#17211bed 50%,#263337ed);
+  backdrop-filter:blur(30px) saturate(140%); -webkit-backdrop-filter:blur(30px) saturate(140%);
+  border:1px solid #d8f1c13b; box-shadow:inset 0 1px 0 #f1ffdd1a,0 -16px 55px #0005;
+}
+.about-brand img { width:76px; height:76px; border-radius:22px; margin-bottom:7px; border:1px solid #d8ff5633; }
